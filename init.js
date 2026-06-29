@@ -21,7 +21,6 @@
 		init: function() {
 			if (self) return;
 			self = this;
-			
 		},
 
 		open: function() {
