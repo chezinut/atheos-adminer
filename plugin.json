@@ -5,7 +5,7 @@
 	"category": "Common",
 	"status": "available",
 	"version": "v1.1.0",
-	"url": "https://github.com/superkekko/atheos-adminer",
+	"url": "https://github.com/chezinut/atheos-adminer",
 	"rightbar": [{
 		"action": "atheos.adminer.open();",
 		"icon": "fas fa-database",
