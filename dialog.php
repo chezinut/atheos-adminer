@@ -9,9 +9,12 @@
 
 switch ($action) {
 
-	case 'open': ?>
+	case 'open': 
+		$path = POST("path");
+		$pluginName = basename(__DIR__);
+	?>
 		<label class="title"><i class="fas fa-database"></i>Adminer</label>
-		<iframe id="adminer" src="<?php echo $path.'/plugins/Adminer/loader.php';?>" style="width:1200px; height:800px"></iframe>	
+		<iframe id="adminer" src="<?php echo $path . 'plugins/' . $pluginName . '/loader.php';?>" style="width:1200px; height:800px"></iframe>	
 		<?php
 		break;
 

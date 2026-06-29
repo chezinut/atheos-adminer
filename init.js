@@ -18,21 +18,33 @@
 
 	atheos.adminer = {
 		
+		pluginName: 'Adminer',
+
 		init: function() {
 			if (self) return;
 			self = this;
+			
+			// Find the actual plugin name from the script tag
+			let scripts = document.getElementsByTagName('script');
+			for (let i = 0; i < scripts.length; i++) {
+				let match = scripts[i].src.match(/plugins\/(.*?)\/init\.js/i);
+				if (match && scripts[i].src.toLowerCase().includes('adminer')) {
+					this.pluginName = match[1];
+					break;
+				}
+			}
 		},
 
 		open: function() {
 			if(storage('adminer.modal')){
 				atheos.modal.load(1000,{
-					target: 'Adminer',
+					target: self.pluginName,
 					action: 'open',
-					path: atheos.path
+					path: atheos.baseUrl
 				});
 				atheos.common.hideOverlay();
 			}else{
-				window.open(atheos.path + 'plugins/Adminer/loader.php');
+				window.open(atheos.baseUrl + 'plugins/' + self.pluginName + '/loader.php');
 			}
 		}
 	};
