@@ -4,9 +4,8 @@
 
 (function() {
 
-	const STORAGE_KEY = 'adminer.credentials';
-	const COOKIE_KEY = 'adminer.permanentCookie';
 	let editingIndex = -1;
+	let cachedCreds = null;
 
 	carbon.subscribe('system.loadExtra', () => atheos.adminer.init());
 
@@ -15,7 +14,7 @@
 		init: function() {
 			carbon.subscribe('settings.panelLoaded', function() {
 				if (document.querySelector('.adminer-creds-list')) {
-					atheos.adminer.renderCredentials();
+					atheos.adminer.loadAndRender();
 					atheos.adminer.bindEvents();
 				}
 			});
@@ -25,12 +24,42 @@
 			window.open(atheos.baseUrl + 'plugins/Adminer/loader.php');
 		},
 
-		getCredentials: function() {
-			return storage(STORAGE_KEY) || [];
+		loadCredentials: function(callback) {
+			echo({
+				url: atheos.controller,
+				data: {
+					target: 'Adminer',
+					action: 'loadCredentials'
+				},
+				settled: function(reply, status) {
+					if (status === 200 && reply && Array.isArray(reply.list)) {
+						cachedCreds = reply.list;
+					} else {
+						cachedCreds = [];
+					}
+					if (callback) callback(cachedCreds);
+				}
+			});
 		},
 
-		saveCredentials: function(creds) {
-			storage(STORAGE_KEY, creds);
+		saveCredentials: function(creds, callback) {
+			echo({
+				url: atheos.controller,
+				data: {
+					target: 'Adminer',
+					action: 'saveCredentials',
+					credentials: JSON.stringify(creds)
+				},
+				settled: function(reply, status) {
+					if (callback) callback(status === 200);
+				}
+			});
+		},
+
+		loadAndRender: function() {
+			atheos.adminer.loadCredentials(function() {
+				atheos.adminer.renderCredentials();
+			});
 		},
 
 		bindEvents: function() {
@@ -45,8 +74,6 @@
 					atheos.adminer.exportAll();
 				} else if (e.target.closest('.adminer-import-creds')) {
 					document.querySelector('.adminer-import-input').click();
-				} else if (e.target.closest('.adminer-capture-cookie')) {
-					atheos.adminer.captureCookie();
 				} else if (e.target.closest('.adminer-cred-edit')) {
 					var idx = parseInt(e.target.closest('.adminer-cred-edit').getAttribute('data-index'));
 					atheos.adminer.editCred(idx);
@@ -67,25 +94,11 @@
 			}
 		},
 
-		captureCookie: function() {
-			var cookies = document.cookie.split(';');
-			for (var i = 0; i < cookies.length; i++) {
-				var c = cookies[i].trim();
-				if (c.indexOf('adminer_permanent=') === 0) {
-					var val = c.substring('adminer_permanent='.length);
-					storage(COOKIE_KEY, val);
-					atheos.toast.show('success', 'Adminer permanent login cookie captured');
-					return;
-				}
-			}
-			atheos.toast.show('error', 'No adminer_permanent cookie found. Login to Adminer with "Permanent login" checked first.');
-		},
-
 		renderCredentials: function() {
 			var list = document.querySelector('.adminer-creds-list');
 			if (!list) return;
 
-			var creds = atheos.adminer.getCredentials();
+			var creds = cachedCreds || [];
 			if (creds.length === 0) {
 				list.innerHTML = '<p style="color:#666;font-size:12px;">No saved credentials.</p>';
 				return;
@@ -93,9 +106,11 @@
 
 			var html = '';
 			creds.forEach(function(cred, i) {
+				var label = cred.label || (cred.username + '@' + cred.server);
+				var driver = cred.driver || 'server';
 				html += '<div style="display:flex;align-items:center;padding:6px 8px;margin-bottom:4px;background:#151520;border:1px solid #2a2a3a;border-radius:3px;">' +
-					'<span style="flex:1;color:#ccc;font-size:13px;">' + atheos.adminer.esc(cred.label || cred.username + '@' + cred.server) + '</span>' +
-					'<span style="color:#666;font-size:11px;margin-right:10px;">' + atheos.adminer.esc(cred.driver || 'server') + '</span>' +
+					'<span style="flex:1;color:#ccc;font-size:13px;">' + atheos.adminer.esc(label) + '</span>' +
+					'<span style="color:#666;font-size:11px;margin-right:10px;">' + atheos.adminer.esc(driver) + '</span>' +
 					'<button class="adminer-cred-login" data-index="' + i + '" title="Login" style="padding:3px 8px;cursor:pointer;background:#1a3a1a;border:1px solid #2a5a2a;color:#7ebf7e;border-radius:3px;font-size:11px;">Login</button> ' +
 					'<button class="adminer-cred-edit" data-index="' + i + '" title="Edit" style="padding:3px 8px;cursor:pointer;background:#1a2a3a;border:1px solid #2a3a5a;color:#7eb8f0;border-radius:3px;font-size:11px;"><i class="fas fa-pen"></i></button> ' +
 					'<button class="adminer-cred-delete" data-index="' + i + '" title="Delete" style="padding:3px 8px;cursor:pointer;background:#2a1515;border:1px solid #3a2020;color:#e07070;border-radius:3px;font-size:11px;"><i class="fas fa-trash"></i></button>' +
@@ -140,20 +155,32 @@
 				return;
 			}
 
-			var creds = atheos.adminer.getCredentials();
+			// When editing, an empty password input means "keep the stored one".
+			// The server preserves it when this property is omitted.
+			if (editingIndex >= 0 && cred.password === '') {
+				delete cred.password;
+			}
+
+			var creds = (cachedCreds || []).slice();
 			if (editingIndex >= 0) {
 				creds[editingIndex] = cred;
 			} else {
 				creds.push(cred);
 			}
-			atheos.adminer.saveCredentials(creds);
-			atheos.adminer.hideForm();
-			atheos.adminer.renderCredentials();
-			atheos.toast.show('success', 'Credential saved');
+
+			atheos.adminer.saveCredentials(creds, function(ok) {
+				if (!ok) {
+					atheos.toast.show('error', 'Failed to save credential');
+					return;
+				}
+				atheos.adminer.hideForm();
+				atheos.adminer.loadAndRender();
+				atheos.toast.show('success', 'Credential saved');
+			});
 		},
 
 		editCred: function(index) {
-			var creds = atheos.adminer.getCredentials();
+			var creds = cachedCreds || [];
 			if (creds[index]) {
 				var cred = JSON.parse(JSON.stringify(creds[index]));
 				cred._index = index;
@@ -163,19 +190,25 @@
 
 		deleteCred: function(index) {
 			if (!confirm('Delete this credential?')) return;
-			var creds = atheos.adminer.getCredentials();
+			var creds = (cachedCreds || []).slice();
 			creds.splice(index, 1);
-			atheos.adminer.saveCredentials(creds);
-			atheos.adminer.renderCredentials();
-			atheos.toast.show('success', 'Credential deleted');
+
+			atheos.adminer.saveCredentials(creds, function(ok) {
+				if (!ok) {
+					atheos.toast.show('error', 'Failed to delete credential');
+					return;
+				}
+				atheos.adminer.loadAndRender();
+				atheos.toast.show('success', 'Credential deleted');
+			});
 		},
 
 		quickLogin: function(index) {
-			window.open(atheos.baseUrl + 'plugins/Adminer/loader.php', 'adminer_' + index);
+			window.open(atheos.baseUrl + 'plugins/Adminer/loader.php?cred=' + encodeURIComponent(index));
 		},
 
 		exportAll: function() {
-			var creds = atheos.adminer.getCredentials();
+			var creds = cachedCreds || [];
 			if (creds.length === 0) {
 				atheos.toast.show('error', 'No credentials to export');
 				return;
@@ -203,37 +236,42 @@
 				try {
 					var data = JSON.parse(e.target.result);
 					var imported = 0;
-					var existing = atheos.adminer.getCredentials();
+					// Start from the masked cache; existing entries without a
+					// password are preserved server-side via slot matching.
+					var existing = (cachedCreds || []).slice();
+
+					var push = function(cred) {
+						if (!cred || !cred.server || !cred.username) return;
+						existing.push({
+							label: cred.label || '',
+							driver: cred.driver || 'server',
+							server: cred.server,
+							username: cred.username,
+							password: cred.password || '',
+							dbname: cred.dbname || ''
+						});
+						imported++;
+					};
 
 					if (Array.isArray(data)) {
-						data.forEach(function(cred) {
-							if (cred.server && cred.username) {
-								existing.push({
-									label: cred.label || '',
-									driver: cred.driver || 'server',
-									server: cred.server,
-									username: cred.username,
-									password: cred.password || '',
-									dbname: cred.dbname || ''
-								});
-								imported++;
-							}
-						});
-					} else if (data.server && data.username) {
-						existing.push({
-							label: data.label || '',
-							driver: data.driver || 'server',
-							server: data.server,
-							username: data.username,
-							password: data.password || '',
-							dbname: data.dbname || ''
-						});
-						imported = 1;
+						data.forEach(push);
+					} else {
+						push(data);
 					}
 
-					atheos.adminer.saveCredentials(existing);
-					atheos.adminer.renderCredentials();
-					atheos.toast.show('success', imported + ' credential(s) imported');
+					if (imported === 0) {
+						atheos.toast.show('error', 'No valid credentials in file');
+						return;
+					}
+
+					atheos.adminer.saveCredentials(existing, function(ok) {
+						if (!ok) {
+							atheos.toast.show('error', 'Failed to import credentials');
+							return;
+						}
+						atheos.adminer.loadAndRender();
+						atheos.toast.show('success', imported + ' credential(s) imported');
+					});
 				} catch (err) {
 					atheos.toast.show('error', 'Failed to parse file');
 				}
@@ -244,7 +282,7 @@
 
 		esc: function(str) {
 			var div = document.createElement('div');
-			div.textContent = str;
+			div.textContent = str || '';
 			return div.innerHTML;
 		}
 	};
