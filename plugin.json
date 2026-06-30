@@ -10,5 +10,10 @@
 		"action": "atheos.adminer.open();",
 		"icon": "fas fa-database",
 		"title": "Adminer"
+	}],
+	"config": [{
+		"file": "dialog.php",
+		"icon": "fas fa-database",
+		"title": "Adminer"
 	}]
 }
