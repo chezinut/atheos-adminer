@@ -1,10 +1,10 @@
 {
-	"author": ["Superkekko"],
+	"author": ["CheziNut","Superkekko"],
 	"name": "Adminer",
 	"description": "Adminer port for Atheos",
-	"category": "Common",
+	"category": "Utility",
 	"status": "available",
-	"version": "v1.1.0",
+	"version": "v1.2.0",
 	"url": "https://github.com/chezinut/atheos-adminer",
 	"rightbar": [{
 		"action": "atheos.adminer.open();",
